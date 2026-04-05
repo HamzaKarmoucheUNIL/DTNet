@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find 'C:/Users/hamza/OneDrive/Documents/MASTER THESIS/DTNet/Prototype/src' 'C:/Users/hamza/OneDrive/Documents/MASTER THESIS/DTNet/Prototype/tests' -name '*.py' -exec truncate -s 0 '{}' ';')"
+    ]
+  }
+}

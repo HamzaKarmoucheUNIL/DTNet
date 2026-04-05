@@ -1,0 +1,11 @@
+networkx
+mesa
+torch
+torch_geometric
+pandas
+numpy
+scikit-learn
+matplotlib
+plotly
+seaborn
+streamlit
