@@ -9,8 +9,7 @@ build/
 # Virtual environment
 .venv/
 
-# Data (do not commit raw or processed datasets)
-data/raw/
+# Data
 data/processed/
 
 # Environment variables
