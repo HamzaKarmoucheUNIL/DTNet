@@ -242,13 +242,13 @@ def generate_simulation_data(
         # Reset all twins + scheduler + DataCollector (COMMON_MISTAKES #10)
         model.reset()
 
-        # Baseline snapshot — must precede any inject_disruption() call
-        initial_features: List[List[float]] = _extract_initial_features(G, node_order)
-
         # Sample and inject disruption
         initial_disruption: Dict[str, float] = _sample_disruption(rng, node_order, G)
         for node_id, severity in initial_disruption.items():
             model.inject_disruption(node_id, severity)
+
+        # Feature snapshot AFTER injection so seed nodes have disruption_severity > 0
+        initial_features: List[List[float]] = _extract_initial_features(G, node_order)
 
         # Run cascade
         for _ in range(max_timesteps):

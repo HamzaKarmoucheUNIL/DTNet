@@ -12,7 +12,10 @@ import pandas as pd
 
 np.random.seed(42)
 
-RAW_DATA_DIR: Path = Path("data/raw")
+# Resolve from __file__ so path is correct regardless of CWD.
+# loader.py lives at <root>/src/data/loader.py  →  3 parents up = project root.
+_PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent
+RAW_DATA_DIR: Path = _PROJECT_ROOT / "data" / "raw"
 
 
 def load_csv(filename: str) -> pd.DataFrame:
@@ -21,7 +24,7 @@ def load_csv(filename: str) -> pd.DataFrame:
     Parameters
     ----------
     filename : str
-        Name of the CSV file (e.g. ``'predictive_maintenance.csv'``).
+        Name of the CSV file (e.g. ``'updated_data.csv'``).
 
     Returns
     -------
@@ -86,7 +89,7 @@ def main() -> None:
     -------
     .. code-block:: bash
 
-        python -m src.data.loader predictive_maintenance.csv
+        python -m src.data.loader updated_data.csv
     """
     if len(sys.argv) < 2:
         print("Usage: python -m src.data.loader <filename.csv>")

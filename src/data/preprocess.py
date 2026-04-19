@@ -176,7 +176,7 @@ def save_processed(df: pd.DataFrame, filename: str) -> Path:
     df : pd.DataFrame
         Processed DataFrame to persist.
     filename : str
-        Output filename (e.g. ``'predictive_maintenance_processed.csv'``).
+        Output filename (e.g. ``'updated_data_processed.csv'``).
 
     Returns
     -------
@@ -242,7 +242,7 @@ def main() -> None:
     -------
     .. code-block:: bash
 
-        python -m src.data.preprocess predictive_maintenance.csv predictive_maintenance_processed.csv
+        python -m src.data.preprocess updated_data.csv updated_data_processed.csv
     """
     if len(sys.argv) < 2:
         print("Usage: python -m src.data.preprocess <input.csv> [output.csv]")

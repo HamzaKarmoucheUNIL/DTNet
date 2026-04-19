@@ -62,7 +62,14 @@ class EntityMappings:
         family.
     cross_plant_parts : dict[str, list[str]]
         Maps part_no → sorted list of plant_codes for parts that appear
-        in two or more plants. Empty if no shared parts exist.
+        in two or more plants. Empty if part_nos are plant-specific.
+    machine_to_families : dict[str, list[str]]
+        Maps each asset_tag to the sorted list of part_families used by
+        that machine.
+    cross_plant_families : dict[str, list[str]]
+        Maps part_family → sorted list of plant_codes for families that
+        appear in two or more plants. Used for shared_part_dependency edges
+        when part_nos are plant-specific (as in updated_data.csv).
     """
 
     plant_codes:       List[str] = field(default_factory=list)
@@ -70,11 +77,13 @@ class EntityMappings:
     part_nos:          List[str] = field(default_factory=list)
     part_families:     List[str] = field(default_factory=list)
 
-    plant_to_machines: Dict[str, List[str]] = field(default_factory=dict)
-    machine_to_parts:  Dict[str, List[str]] = field(default_factory=dict)
-    part_to_machines:  Dict[str, List[str]] = field(default_factory=dict)
-    family_to_parts:   Dict[str, List[str]] = field(default_factory=dict)
-    cross_plant_parts: Dict[str, List[str]] = field(default_factory=dict)
+    plant_to_machines:    Dict[str, List[str]] = field(default_factory=dict)
+    machine_to_parts:     Dict[str, List[str]] = field(default_factory=dict)
+    part_to_machines:     Dict[str, List[str]] = field(default_factory=dict)
+    family_to_parts:      Dict[str, List[str]] = field(default_factory=dict)
+    cross_plant_parts:    Dict[str, List[str]] = field(default_factory=dict)
+    machine_to_families:  Dict[str, List[str]] = field(default_factory=dict)
+    cross_plant_families: Dict[str, List[str]] = field(default_factory=dict)
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -167,12 +176,23 @@ def build_entity_mappings(df: pd.DataFrame) -> "EntityMappings":
     part_to_machines:  Dict[str, List[str]] = _group_sorted(cols, COL_PART,   COL_ASSET)
     family_to_parts:   Dict[str, List[str]] = _group_sorted(cols, COL_FAMILY, COL_PART)
 
-    # ── cross-plant shared parts ───────────────────────────────────────────
+    # ── cross-plant shared parts (by part_no) ─────────────────────────────
     # For each part_no, collect the set of plants that stock it
     part_to_plants: Dict[str, List[str]] = _group_sorted(cols, COL_PART, COL_PLANT)
     cross_plant_parts: Dict[str, List[str]] = {
         part: plants
         for part, plants in part_to_plants.items()
+        if len(plants) >= 2
+    }
+
+    # ── cross-plant shared families (by part_family) ───────────────────────
+    # Used when part_nos are plant-specific but the same family appears in
+    # multiple plants (e.g. "Roulements" used by JF30 and MP10).
+    machine_to_families: Dict[str, List[str]] = _group_sorted(cols, COL_ASSET, COL_FAMILY)
+    family_to_plants: Dict[str, List[str]] = _group_sorted(cols, COL_FAMILY, COL_PLANT)
+    cross_plant_families: Dict[str, List[str]] = {
+        fam: plants
+        for fam, plants in family_to_plants.items()
         if len(plants) >= 2
     }
 
@@ -186,6 +206,8 @@ def build_entity_mappings(df: pd.DataFrame) -> "EntityMappings":
         part_to_machines=part_to_machines,
         family_to_parts=family_to_parts,
         cross_plant_parts=cross_plant_parts,
+        machine_to_families=machine_to_families,
+        cross_plant_families=cross_plant_families,
     )
 
 
@@ -249,7 +271,7 @@ def main() -> None:
     -------
     .. code-block:: bash
 
-        python -m src.data.entity_mapping predictive_maintenance.csv
+        python -m src.data.entity_mapping updated_data.csv
     """
     if len(sys.argv) < 2:
         print("Usage: python -m src.data.entity_mapping <filename.csv>")

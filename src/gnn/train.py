@@ -31,9 +31,9 @@ torch.manual_seed(42)
 # Constants
 # ---------------------------------------------------------------------------
 
-LR: float = 0.001
+LR: float = 0.0003
 WEIGHT_DECAY: float = 5e-4
-PATIENCE: int = 20
+PATIENCE: int = 30
 MAX_EPOCHS: int = 200
 LOG_INTERVAL: int = 10
 GNN_SAVE_PATH: Path = Path("results/dtnet_gnn_best.pt")
@@ -141,6 +141,9 @@ def train_model(
     optimizer: torch.optim.Optimizer = torch.optim.Adam(
         model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY
     )
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", patience=10, factor=0.5
+    )
     criterion: nn.Module = nn.MSELoss()
 
     history: Dict[str, List[float] | int | float] = {
@@ -174,6 +177,8 @@ def train_model(
                 f"  val_mse={val_loss:.6f}"
                 f"  val_mae={val_mae:.6f}"
             )
+
+        scheduler.step(val_loss)
 
         # Early stopping — track best val MSE
         if val_loss < history["best_val_loss"]:  # type: ignore[operator]

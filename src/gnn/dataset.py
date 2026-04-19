@@ -67,24 +67,35 @@ def _extract_edge_attrs(
     G: nx.DiGraph,
     node_order: List[str],
 ) -> torch.Tensor:
-    """Extract (criticality_weight, flow_capacity) per directed edge.
+    """Extract (criticality_weight, flow_capacity, shared_parts_count) per directed edge.
 
     Edges are iterated in ``G.edges()`` order, which matches the order used
     in ``data_generator._build_edge_index``, so indices align with edge_index.
+    ``shared_parts_count`` is normalized by the maximum count across all edges
+    to keep it in [0, 1].
 
     Args:
-        G: DTNet DiGraph with ``criticality_weight`` and ``flow_capacity``
-            on every edge.
+        G: DTNet DiGraph with ``criticality_weight``, ``flow_capacity``, and
+            ``shared_parts_count`` on every edge.
         node_order: Canonical node ordering (used only for consistency check).
 
     Returns:
-        Tensor of shape (E, 2): columns are [criticality_weight, flow_capacity].
+        Tensor of shape (E, 3): columns are
+        [criticality_weight, flow_capacity, shared_parts_count_normalized].
     """
+    edge_data: List[tuple] = list(G.edges(data=True))
+    shared_counts: List[float] = [
+        float(d.get("shared_parts_count", 0.0)) for _, _, d in edge_data
+    ]
+    max_shared: float = max(shared_counts) if shared_counts else 1.0
+    if max_shared == 0.0:
+        max_shared = 1.0
+
     rows: List[List[float]] = []
-    for _u, _v, data in G.edges(data=True):
+    for (_, _, data), sc in zip(edge_data, shared_counts):
         cw: float = float(data.get("criticality_weight", 0.5))
         fc: float = float(data.get("flow_capacity", 0.9))
-        rows.append([cw, fc])
+        rows.append([cw, fc, sc / max_shared])
     return torch.tensor(rows, dtype=torch.float)
 
 

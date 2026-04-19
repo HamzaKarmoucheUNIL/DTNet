@@ -2,7 +2,17 @@
   "permissions": {
     "allow": [
       "Bash(find 'C:/Users/hamza/OneDrive/Documents/MASTER THESIS/DTNet/Prototype/src' 'C:/Users/hamza/OneDrive/Documents/MASTER THESIS/DTNet/Prototype/tests' -name '*.py' -exec truncate -s 0 '{}' ';')",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(ls .venv/)",
+      "Bash(ls venv/)",
+      "Bash(.venv/Scripts/python -c ' *)",
+      "Bash(python3 *)",
+      "Bash(where python3 *)",
+      "Bash(where python *)",
+      "Read(//c/Users/hamza/AppData/Local/Programs/**)",
+      "Read(//c/Users/hamza/miniconda3/**)",
+      "Read(//c/Users/hamza/anaconda3/**)",
+      "Bash(C:/Users/hamza/OneDrive/Documents/MASTER THESIS/DTNet/Prototype/.venv/Scripts/python.exe *)"
     ]
   }
 }

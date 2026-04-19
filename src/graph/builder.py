@@ -150,6 +150,7 @@ def build_graph(
             flow_capacity=spec.flow_capacity,
             criticality_weight=spec.criticality_weight,
             latency_days=spec.latency_days,
+            shared_parts_count=spec.shared_parts_count,
         )
 
     print(

@@ -6,7 +6,7 @@ Internal module used by ``topology.py``. Do not import directly from outside
 
 from __future__ import annotations
 
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from src.data.entity_mapping import EntityMappings
 from src.graph.topology_specs import EdgeSpec
@@ -140,51 +140,93 @@ def build_process_chain_edges(em: EntityMappings) -> List[EdgeSpec]:
 
 
 def build_cross_plant_edges(em: EntityMappings) -> List[EdgeSpec]:
-    """Add bidirectional shared_part_dependency edges for cross-plant parts.
+    """Add unidirectional shared_part_dependency edges for cross-plant parts.
 
-    For every part that appears in two or more plants, find all machine pairs
-    (one from each plant) that both use that part and emit a directed edge in
-    each direction. Each unique (source, target) pair is emitted only once.
+    Tries part_no-level sharing first (``em.cross_plant_parts``). If that
+    mapping is empty (part_nos are plant-specific, as in updated_data.csv),
+    falls back to part_family-level sharing (``em.cross_plant_families``).
+
+    For each (key, plant_pair): one representative machine is selected per
+    plant — the machine that uses the most parts belonging to that key —
+    then a single directed edge is emitted from the representative in the
+    alphabetically smaller plant to the one in the larger plant.
+
+    Multiple shared keys between the same representative pair are collapsed
+    into a single edge whose ``shared_parts_count`` equals the number of
+    shared keys and whose ``criticality_weight`` equals
+    ``shared_parts_count / max_shared_parts`` across all pairs.
 
     Args:
         em: Populated EntityMappings.
 
     Returns:
-        List of EdgeSpec objects (shared_part_dependency).
+        List of EdgeSpec objects (shared_part_dependency), one per
+        unordered representative machine pair.
     """
-    edges: List[EdgeSpec] = []
-    seen: Set[Tuple[str, str]] = set()
+    # Choose the sharing index: prefer part_no, fall back to part_family.
+    if em.cross_plant_parts:
+        sharing_index: Dict[str, List[str]] = em.cross_plant_parts
 
-    for part_no, plants in em.cross_plant_parts.items():
-        # Collect machines per plant for this part
-        machines_per_plant: Dict[str, List[str]] = {}
-        for plant_code in plants:
-            plant_machines: List[str] = [
+        def pick_rep(plant_code: str, key: str) -> Optional[str]:
+            """Machine in plant_code that uses part_no key (most total parts)."""
+            candidates: List[str] = [
                 m for m in em.plant_to_machines.get(plant_code, [])
-                if part_no in em.machine_to_parts.get(m, [])
+                if key in em.machine_to_parts.get(m, [])
             ]
-            if plant_machines:
-                machines_per_plant[plant_code] = plant_machines
+            if not candidates:
+                return None
+            return max(candidates, key=lambda m: len(em.machine_to_parts.get(m, [])))
+    else:
+        sharing_index = em.cross_plant_families
 
-        plant_list: List[str] = sorted(machines_per_plant.keys())
+        def pick_rep(plant_code: str, key: str) -> Optional[str]:  # type: ignore[misc]
+            """Machine in plant_code with the most parts in part_family key."""
+            candidates: List[str] = [
+                m for m in em.plant_to_machines.get(plant_code, [])
+                if key in em.machine_to_families.get(m, [])
+            ]
+            if not candidates:
+                return None
+            family_parts: Set[str] = set(em.family_to_parts.get(key, []))
+            return max(
+                candidates,
+                key=lambda m: len(set(em.machine_to_parts.get(m, [])) & family_parts),
+            )
 
+    # Pass 1 — count shared keys per unordered representative pair.
+    # Direction: representative in smaller plant_code → larger plant_code.
+    pair_counts: Dict[Tuple[str, str], int] = {}
+
+    for key, plants in sharing_index.items():
+        plant_reps: Dict[str, str] = {}
+        for plant_code in plants:
+            rep: Optional[str] = pick_rep(plant_code, key)
+            if rep is not None:
+                plant_reps[plant_code] = rep
+
+        plant_list: List[str] = sorted(plant_reps.keys())
         for i in range(len(plant_list)):
             for j in range(i + 1, len(plant_list)):
-                src_machines: List[str] = machines_per_plant[plant_list[i]]
-                tgt_machines: List[str] = machines_per_plant[plant_list[j]]
-                for src in src_machines:
-                    for tgt in tgt_machines:
-                        for s, t in [(src, tgt), (tgt, src)]:
-                            if (s, t) not in seen:
-                                seen.add((s, t))
-                                edges.append(EdgeSpec(
-                                    source=s,
-                                    target=t,
-                                    edge_type="shared_part_dependency",
-                                    flow_capacity=0.7,
-                                    criticality_weight=CRITICALITY["shared_part_dependency"],
-                                    latency_days=LATENCY["shared_part_dependency"],
-                                ))
+                src: str = plant_reps[plant_list[i]]
+                tgt: str = plant_reps[plant_list[j]]
+                pair_counts[(src, tgt)] = pair_counts.get((src, tgt), 0) + 1
+
+    if not pair_counts:
+        return []
+
+    # Pass 2 — emit one EdgeSpec per pair; scale criticality by shared count.
+    max_shared: int = max(pair_counts.values())
+    edges: List[EdgeSpec] = []
+    for (s, t), count in pair_counts.items():
+        edges.append(EdgeSpec(
+            source=s,
+            target=t,
+            edge_type="shared_part_dependency",
+            flow_capacity=0.7,
+            criticality_weight=count / max_shared,
+            latency_days=LATENCY["shared_part_dependency"],
+            shared_parts_count=count,
+        ))
     return edges
 
 

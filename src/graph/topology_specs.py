@@ -53,3 +53,4 @@ class EdgeSpec:
     flow_capacity: float = DEFAULT_FLOW_CAPACITY
     criticality_weight: float = DEFAULT_CRITICALITY
     latency_days: int = DEFAULT_LATENCY_DAYS
+    shared_parts_count: int = 0

@@ -27,7 +27,7 @@ torch.manual_seed(42)
 
 IN_CHANNELS: int = 10       # node feature dimension (see dataset.py)
 HIDDEN_CHANNELS: int = 64   # hidden / per-head output dimension
-EDGE_DIM: int = 2           # edge feature dimension: [criticality_weight, flow_capacity]
+EDGE_DIM: int = 3           # edge feature dimension: [criticality_weight, flow_capacity, shared_parts_count]
 GAT_HEADS_1: int = 4        # attention heads in first GATConv layer
 GAT_HEADS_2: int = 1        # attention heads in second GATConv layer
 DROPOUT_P: float = 0.3      # dropout probability applied after each GAT layer

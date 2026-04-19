@@ -12,7 +12,6 @@ import torch
 import networkx as nx
 import mesa
 from mesa import DataCollector
-from mesa.time import SimultaneousActivation
 from typing import Any, Dict, List, Set
 
 from src.agents.base_agent import DigitalTwinAgent
@@ -24,8 +23,8 @@ torch.manual_seed(42)
 # Constants
 # ---------------------------------------------------------------------------
 
-DEFAULT_PROPAGATION_DECAY: float = 0.6
-DEFAULT_THRESHOLD: float = 0.15
+DEFAULT_PROPAGATION_DECAY: float = 0.75
+DEFAULT_THRESHOLD: float = 0.05
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +46,6 @@ class TwinMesaAgent(mesa.Agent):
 
     def __init__(
         self,
-        unique_id: int,
         model: "DTNetModel",
         node_id: str,
         twin: DigitalTwinAgent,
@@ -55,12 +53,11 @@ class TwinMesaAgent(mesa.Agent):
         """Initialise the Mesa wrapper for one digital twin node.
 
         Args:
-            unique_id: Integer identifier required by Mesa.
             model: Parent DTNetModel instance.
             node_id: NetworkX node key matching G.nodes.
             twin: The DigitalTwinAgent backing this node.
         """
-        super().__init__(unique_id, model)
+        super().__init__(model)
         self.node_id: str = node_id
         self.twin: DigitalTwinAgent = twin
         self._pending_severity: float = 0.0
@@ -99,7 +96,7 @@ class TwinMesaAgent(mesa.Agent):
 
     def advance(self) -> None:
         """Apply pending disruption if above threshold; tick the twin's counter."""
-        current_step: int = self.model.schedule.steps
+        current_step: int = self.model.steps
         if self._pending_severity > self.model.threshold:
             self.twin.apply_disruption(self._pending_severity, current_step)
         self.twin.step()
@@ -152,15 +149,13 @@ class DTNetModel(mesa.Model):
         self.propagation_decay: float = propagation_decay
         self.threshold: float = threshold
 
-        self.schedule: SimultaneousActivation = SimultaneousActivation(self)
         self._agent_map: Dict[str, TwinMesaAgent] = {}
         self._disrupted_prev: Set[str] = set()
         self._newly_disrupted: List[str] = []
 
-        for uid, (node_id, data) in enumerate(G.nodes(data=True)):
+        for _, (node_id, data) in enumerate(G.nodes(data=True)):
             twin: DigitalTwinAgent = data["twin"]
-            agent: TwinMesaAgent = TwinMesaAgent(uid, self, node_id, twin)
-            self.schedule.add(agent)
+            agent: TwinMesaAgent = TwinMesaAgent(self, node_id, twin)
             self._agent_map[node_id] = agent
 
         self.datacollector: DataCollector = self._make_datacollector()
@@ -205,7 +200,8 @@ class DTNetModel(mesa.Model):
             if data["twin"].is_disrupted
         }
 
-        self.schedule.step()
+        self.agents.do("step")
+        self.agents.do("advance")
 
         disrupted_now: Set[str] = {
             node_id
@@ -231,7 +227,7 @@ class DTNetModel(mesa.Model):
         if node_id not in self.G.nodes:
             raise KeyError(f"Node '{node_id}' not found in the graph.")
         twin: DigitalTwinAgent = self.G.nodes[node_id]["twin"]
-        twin.apply_disruption(severity, self.schedule.steps)
+        twin.apply_disruption(severity, self.steps)
 
     def reset(self) -> None:
         """Restore all agents to baseline; clear history (COMMON_MISTAKES #10)."""
@@ -240,8 +236,6 @@ class DTNetModel(mesa.Model):
 
         self._disrupted_prev = set()
         self._newly_disrupted = []
-        self.schedule.steps = 0
-        self.schedule.time = 0
         self.datacollector = self._make_datacollector()
 
     def get_history(self) -> List[Dict[str, Any]]:
@@ -261,7 +255,7 @@ class DTNetModel(mesa.Model):
 
         agent_step_levels: set = set(agent_df.index.get_level_values(0).unique())
         id_to_node: Dict[int, str] = {
-            a.unique_id: a.node_id for a in self.schedule.agents
+            a.unique_id: a.node_id for a in self.agents
         }
 
         history: List[Dict[str, Any]] = []
