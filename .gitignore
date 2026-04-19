@@ -25,6 +25,5 @@ Thumbs.db
 CLAUDE.md
 .claude
 instructions/
-data/
 results/*.pt
 results/*.pkl
