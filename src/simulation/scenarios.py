@@ -18,7 +18,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 import networkx as nx
-from typing import Dict, List
+from typing import Any, Dict, List
 
 np.random.seed(42)
 torch.manual_seed(42)
@@ -29,7 +29,11 @@ torch.manual_seed(42)
 
 LAYER_SUPPLIER: str = "supplier"
 LAYER_LOGISTICS: str = "logistics"
+LAYER_PLANT: str = "plant"
 _BETWEENNESS_NORMALISED: bool = True
+SEVERITY_CRITICAL_HUB: float = 0.9
+SEVERITY_SUPPLIER_CASCADE: float = 0.7
+SEVERITY_BOTTLENECK_PLANT: float = 0.85
 
 
 # ---------------------------------------------------------------------------
@@ -276,4 +280,124 @@ def random_disruption(
     return {
         nid: float(np.clip(sev, 0.0, 1.0))
         for nid, sev in zip(selected, severities)
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario 6 — Critical hub failure (highest betweenness centrality)
+# ---------------------------------------------------------------------------
+
+
+def scenario_critical_hub_failure(G: nx.DiGraph) -> Dict[str, Any]:
+    """Disrupt the single node with the highest betweenness centrality at severity 0.9.
+
+    Simulates a targeted attack on the most connected/critical point in the
+    supply chain.  Betweenness centrality identifies the node through which the
+    most shortest paths flow; its removal maximally disrupts information and
+    material routing across the entire network.  G is not modified.
+
+    Args:
+        G: DTNet DiGraph with ``layer`` and ``twin`` attributes on every node.
+
+    Returns:
+        Dict with keys ``name`` (str), ``description`` (str),
+        ``disrupted_nodes`` (list of one node ID), ``severity`` (float 0.9).
+
+    Raises:
+        ValueError: If G contains no nodes.
+    """
+    if G.number_of_nodes() == 0:
+        raise ValueError("Graph is empty — no nodes to attack.")
+    centrality: Dict[str, float] = nx.betweenness_centrality(
+        G, normalized=_BETWEENNESS_NORMALISED
+    )
+    target: str = max(centrality, key=centrality.__getitem__)
+    return {
+        "name": "critical_hub_failure",
+        "description": (
+            f"Targeted attack on node '{target}', the highest-betweenness hub "
+            f"(centrality={centrality[target]:.4f}) in the supply chain."
+        ),
+        "disrupted_nodes": [target],
+        "severity": SEVERITY_CRITICAL_HUB,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario 7 — Global supplier cascade (all suppliers simultaneously)
+# ---------------------------------------------------------------------------
+
+
+def scenario_supplier_cascade(G: nx.DiGraph) -> Dict[str, Any]:
+    """Disrupt ALL supplier-layer nodes simultaneously at severity 0.7.
+
+    Simulates a global raw material shortage affecting the entire upstream of
+    the supply chain — e.g. a commodity crisis or simultaneous export
+    restrictions across multiple source regions.  G is not modified.
+
+    Args:
+        G: DTNet DiGraph with ``layer`` and ``twin`` attributes on every node.
+
+    Returns:
+        Dict with keys ``name`` (str), ``description`` (str),
+        ``disrupted_nodes`` (sorted list of all supplier node IDs),
+        ``severity`` (float 0.7).
+
+    Raises:
+        ValueError: If the graph has no supplier-layer nodes.
+    """
+    supplier_nodes: List[str] = [
+        nid for nid, d in G.nodes(data=True) if d.get("layer") == LAYER_SUPPLIER
+    ]
+    if not supplier_nodes:
+        raise ValueError("Graph contains no nodes with layer='supplier'.")
+    return {
+        "name": "supplier_cascade",
+        "description": (
+            f"Global raw-material shortage: all {len(supplier_nodes)} supplier "
+            "nodes disrupted simultaneously."
+        ),
+        "disrupted_nodes": sorted(supplier_nodes),
+        "severity": SEVERITY_SUPPLIER_CASCADE,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario 8 — Bottleneck plant failure (highest in-degree among plants)
+# ---------------------------------------------------------------------------
+
+
+def scenario_bottleneck_plant(G: nx.DiGraph) -> Dict[str, Any]:
+    """Disrupt the plant node with the highest in-degree among plant-layer nodes.
+
+    Simulates failure of the most depended-upon production facility — the plant
+    that receives inputs from the largest number of upstream nodes, and whose
+    shutdown therefore starves the widest share of downstream output.
+    G is not modified.
+
+    Args:
+        G: DTNet DiGraph with ``layer`` and ``twin`` attributes on every node.
+
+    Returns:
+        Dict with keys ``name`` (str), ``description`` (str),
+        ``disrupted_nodes`` (single-element list with the plant node ID),
+        ``severity`` (float 0.85).
+
+    Raises:
+        ValueError: If the graph has no plant-layer nodes.
+    """
+    plant_nodes: List[str] = [
+        nid for nid, d in G.nodes(data=True) if d.get("layer") == LAYER_PLANT
+    ]
+    if not plant_nodes:
+        raise ValueError("Graph contains no nodes with layer='plant'.")
+    target: str = max(plant_nodes, key=lambda nid: G.in_degree(nid))
+    return {
+        "name": "bottleneck_plant",
+        "description": (
+            f"Failure of plant '{target}', the most depended-upon production "
+            f"facility (in-degree={G.in_degree(target)})."
+        ),
+        "disrupted_nodes": [target],
+        "severity": SEVERITY_BOTTLENECK_PLANT,
     }

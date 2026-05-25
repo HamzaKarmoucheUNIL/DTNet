@@ -26,29 +26,29 @@ from src.gnn.evaluate import LAYER_ORDER, ONE_HOT_START
 np.random.seed(42)
 torch.manual_seed(42)
 
-BG = '#0a0e17'
+BG = 'white'
 LAYER_COLORS = {
     'supplier': '#4c7aff', 'logistics': '#9b59b6', 'plant': '#2ecc71',
     'machine': '#f39c12',  'distribution': '#e74c3c',
 }
 CASCADE_CMAP = mcolors.LinearSegmentedColormap.from_list(
-    'cascade', ['#1a3a6e', '#f39c12', '#e74c3c']
+    'cascade', ['#D6EAF8', '#F39C12', '#E74C3C']
 )
 DATE             = date.today().strftime('%Y%m%d')
 SAVE_DIR_DEFAULT = Path('results/thesis_figures')
 
 matplotlib.rcParams.update({
-    'figure.facecolor': BG, 'axes.facecolor': BG, 'axes.edgecolor': '#3a3f4e',
-    'axes.labelcolor': 'white', 'xtick.color': 'white', 'ytick.color': 'white',
-    'text.color': 'white', 'grid.color': '#1e2330', 'grid.alpha': 0.4,
-    'legend.facecolor': '#0d1117', 'legend.edgecolor': '#3a3f4e',
+    'figure.facecolor': BG, 'axes.facecolor': BG, 'axes.edgecolor': '#CCCCCC',
+    'axes.labelcolor': '#333333', 'xtick.color': '#333333', 'ytick.color': '#333333',
+    'text.color': '#333333', 'grid.color': '#EEEEEE', 'grid.alpha': 0.8,
+    'legend.facecolor': '#F8F8F8', 'legend.edgecolor': '#CCCCCC',
 })
 
 
 def _savefig(fig: plt.Figure, save_dir: Path, stem: str) -> Path:
     """Save fig at 200 DPI, close it, and return the saved Path."""
     p = Path(save_dir) / f'dtnet_{stem}_{DATE}.png'
-    fig.savefig(p, dpi=200, bbox_inches='tight', facecolor=BG)
+    fig.savefig(p, dpi=200, bbox_inches='tight', facecolor=BG, edgecolor='none')
     plt.close(fig)
     print(f'  [viz] {p.name}')
     return p
@@ -57,12 +57,12 @@ def _savefig(fig: plt.Figure, save_dir: Path, stem: str) -> Path:
 def _setup_ax(
     ax: plt.Axes, title: str, xlabel: str = '', ylabel: str = '', grid: bool = True
 ) -> None:
-    """Apply dark-theme styling to ax — title, labels, grid."""
+    """Apply light-theme styling to ax — title, labels, grid."""
     ax.set_facecolor(BG)
-    ax.set_title(title, color='white', fontsize=11, pad=9)
+    ax.set_title(title, color='#333333', fontsize=11, pad=9)
     if xlabel: ax.set_xlabel(xlabel, fontsize=10)
     if ylabel: ax.set_ylabel(ylabel, fontsize=10)
-    if grid:   ax.grid(True, alpha=0.35)
+    if grid:   ax.grid(True, alpha=0.6)
 
 
 def _hierarchical_pos(node_order: List[str], layer_ids: np.ndarray) -> Dict[str, tuple]:
@@ -87,12 +87,12 @@ def _draw_network_panel(
 ) -> None:
     """Draw one supply-chain graph panel, nodes coloured by disruption severity."""
     cols: List = [CASCADE_CMAP(float(severities[i])) for i in range(len(node_order))]
-    nx.draw_networkx_edges(VizG, pos, ax=ax, edge_color='#2a3a5e',
+    nx.draw_networkx_edges(VizG, pos, ax=ax, edge_color='#AAAACC',
                            arrows=True, arrowsize=10, alpha=0.55, width=0.8)
     nx.draw_networkx_nodes(VizG, pos, node_color=cols, node_size=380,
-                           ax=ax, linewidths=1.0, edgecolors='white')
-    nx.draw_networkx_labels(VizG, pos, ax=ax, font_size=5.5, font_color='white')
-    ax.set_title(title, color='white', fontsize=11, pad=8)
+                           ax=ax, linewidths=1.0, edgecolors='#555555')
+    nx.draw_networkx_labels(VizG, pos, ax=ax, font_size=5.5, font_color='#333333')
+    ax.set_title(title, color='#333333', fontsize=11, pad=8)
     ax.set_facecolor(BG)
     ax.axis('off')
 
@@ -106,21 +106,21 @@ def plot_networked_vs_isolated(eval_results: Dict, save_dir: Path) -> Path:
 
     fig, axes = plt.subplots(1, 3, figsize=(14, 5), facecolor=BG)
     fig.suptitle('Networked GNN vs Isolated Baseline — Overall Performance on Test Set',
-                 color='white', fontsize=14, y=1.02)
+                 color='#333333', fontsize=14, y=1.02)
 
     for ax, (lbl, gv, bv) in zip(axes, specs):
         bars = ax.bar(['DTNetGNN', 'IsolatedBaseline'], [gv, bv],
                       color=['#4c7aff', '#9b59b6'], width=0.5, zorder=3,
-                      edgecolor='white', linewidth=0.5)
+                      edgecolor='#CCCCCC', linewidth=0.5)
         for bar, v in zip(bars, [gv, bv]):
             ax.text(bar.get_x() + bar.get_width() / 2,
                     bar.get_height() + abs(bar.get_height()) * 0.03,
-                    f'{v:.4f}', ha='center', va='bottom', fontsize=10, color='white')
+                    f'{v:.4f}', ha='center', va='bottom', fontsize=10, color='#333333')
         if lbl in ('MSE', 'MAE') and bv > 0:
             pct = (bv - gv) / bv * 100
             ax.text(0.5, 0.94, f'GNN {pct:+.1f}% vs Baseline',
-                    transform=ax.transAxes, ha='center', fontsize=8.5, color='#2ecc71',
-                    bbox=dict(boxstyle='round,pad=0.2', facecolor='#0d1117', alpha=0.7))
+                    transform=ax.transAxes, ha='center', fontsize=8.5, color='#27AE60',
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='#EAF9EA', alpha=0.9))
         if lbl == 'R²':
             ax.axhline(0, color='gray', lw=0.8, alpha=0.5)
         ybot = min(0.0, gv, bv) * 1.1 if lbl == 'R²' else 0.0
@@ -164,8 +164,8 @@ def plot_cascade_spread(
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=axes, shrink=0.75, pad=0.02, aspect=30)
     cbar.set_label('Disruption Severity  [0 = healthy · 1 = failed]',
-                   color='white', fontsize=10)
-    cbar.ax.tick_params(colors='white')
+                   color='#333333', fontsize=10)
+    cbar.ax.tick_params(colors='#333333')
 
     patches = [mpatches.Patch(color=LAYER_COLORS[l], label=l.capitalize())
                for l in LAYER_ORDER]
@@ -175,7 +175,7 @@ def plot_cascade_spread(
     seed_str = ', '.join(list(scenario_result['initial_disruption'].keys()))
     fig.suptitle(
         f'Cascading Disruption Spread — Single Supplier Failure\nSeed: {seed_str}',
-        color='white', fontsize=13, y=1.02,
+        color='#333333', fontsize=13, y=1.02,
     )
     plt.tight_layout()
     return _savefig(fig, save_dir, 'fig2_cascade_spread')
@@ -190,7 +190,7 @@ def plot_accuracy_by_node_type(eval_results: Dict, save_dir: Path) -> Path:
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5), facecolor=BG)
     fig.suptitle('Prediction Accuracy by Supply-Chain Node Type — GNN vs Isolated Baseline',
-                 color='white', fontsize=14, y=1.02)
+                 color='#333333', fontsize=14, y=1.02)
 
     for ax, metric, title in [
         (axes[0], 'mae', 'Mean Absolute Error per Node Type  (lower = better)'),
@@ -199,13 +199,13 @@ def plot_accuracy_by_node_type(eval_results: Dict, save_dir: Path) -> Path:
         gv = [pg[l][metric] for l in layers]
         bv = [pb[l][metric] for l in layers]
         b1 = ax.bar(x - w / 2, gv, w, label='DTNetGNN',
-                    color='#4c7aff', zorder=3, edgecolor='white', linewidth=0.4)
+                    color='#4c7aff', zorder=3, edgecolor='#CCCCCC', linewidth=0.4)
         b2 = ax.bar(x + w / 2, bv, w, label='IsolatedBaseline',
-                    color='#9b59b6', zorder=3, edgecolor='white', linewidth=0.4)
+                    color='#9b59b6', zorder=3, edgecolor='#CCCCCC', linewidth=0.4)
         for bar in list(b1) + list(b2):
             h = bar.get_height()
             ax.text(bar.get_x() + bar.get_width() / 2, h + abs(h) * 0.03,
-                    f'{h:.3f}', ha='center', va='bottom', fontsize=7.5, color='white')
+                    f'{h:.3f}', ha='center', va='bottom', fontsize=7.5, color='#333333')
         ax.set_xticks(x)
         ax.set_xticklabels([l.capitalize() for l in layers], rotation=20, ha='right')
         if metric == 'r2':

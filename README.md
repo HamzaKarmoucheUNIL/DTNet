@@ -1,20 +1,90 @@
-# DTNet — Digital Twin Network for Supply Chain Disruption Prediction
+# DTNet — Networked Digital Twins for Supply Chain Disruption Prediction
 
-DTNet is a research prototype that models industrial supply chains as networks of interconnected digital twins. It combines Graph Neural Networks (GNN) with agent-based simulation to detect and predict cascading disruptions across multi-layered supply chain graphs. The system was designed to evaluate how structural vulnerabilities propagate from individual machine failures to plant-level and network-level disruptions.
+DTNet is a research prototype that models industrial supply chains as a directed graph of
+interconnected digital twins and uses a Graph Attention Network (GNN) combined with
+agent-based simulation (ABS) to predict how disruptions cascade through the network.
+Rather than monitoring each factory node in isolation — the current industry norm — DTNet
+connects all digital twins into a single graph so that structural dependencies and propagation
+paths are first-class citizens of the prediction model. The system is evaluated against an
+isolated-twin baseline to quantify the benefit of the networked approach.
 
 > **Context:** Master's thesis — HEC Lausanne, Master in Data Science, 2025–2026.
 
 ---
 
-## Project Status
+## Research Questions
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | Data Loading & Preprocessing | ✅ Complete |
-| 2 | Graph Construction | ✅ Complete |
-| 3 | Agent-Based Simulation | ✅ Complete |
-| 4 | GNN Training | ✅ Complete |
-| 5 | Results & Comparison | 🔄 In progress |
+| | Question |
+|---|---|
+| **RQ1** | How can a supply chain be represented as a directed graph of digital twins, and what node/edge attributes best capture entity state and inter-dependency? |
+| **RQ2** | How can a GNN combined with agent-based simulation predict the propagation of cascading failures across this graph? |
+| **RQ3** | Does the networked digital-twin approach outperform isolated (non-graph) twins for disruption prediction? |
+
+---
+
+## Architecture
+
+![DTNet Architecture](results/fig_architecture.png)
+
+The framework has three layers:
+
+| Layer | Component | Role |
+|---|---|---|
+| **Node** | Digital Twin Agents (Mesa) | Each supply-chain entity (supplier, logistics, plant, machine, distribution) is a stateful agent with its own attributes and health score |
+| **Graph** | Directed Graph G = (V, E) (NetworkX) | Nodes are digital twins; edges encode flow type (`material_flow`, `operational`, `process_chain`, `shared_part_dependency`) and criticality weight |
+| **Intelligence** | GNN + ABS | A GATConv-based model learns disruption propagation from graph structure; Mesa simulation generates training data and runs scenarios |
+
+---
+
+## Installation
+
+```bash
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+> **PyTorch Geometric** requires a matching PyTorch + CUDA version.
+> See the [official installation guide](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html).
+> GPU training was performed on Google Colab.
+
+---
+
+## Usage
+
+### 1 — Generate simulation training data
+```bash
+python -m src.simulation.generate_data
+```
+
+### 2 — Train the GNN
+```bash
+python -m src.gnn.train
+```
+
+### 3 — Evaluate robustness (5 seeds, networked vs isolated)
+```bash
+python -m src.gnn.evaluate_robust
+```
+
+### 4 — Run scenario analysis visualisation
+```bash
+python -m src.viz.scenario_analysis_viz
+```
+
+### Interactive dashboard (thesis demo)
+```bash
+streamlit run dashboard/app.py
+```
+
+### Tests
+```bash
+python -m pytest tests/
+```
 
 ---
 
@@ -23,80 +93,50 @@ DTNet is a research prototype that models industrial supply chains as networks o
 ```
 Prototype/
 ├── data/
-│   ├── raw/                        # Raw synthetic industrial machine data
-│   └── processed/                  # Cleaned and feature-engineered datasets
-├── notebooks/
-│   ├── 01_data_exploration.ipynb   # EDA and preprocessing
-│   ├── 02_graph_construction.ipynb # Build the digital twin network
-│   ├── 03_simulation_runs.ipynb    # Agent-based disruption scenarios
-│   ├── 04_gnn_training.ipynb       # GAT model training and evaluation
-│   └── 05_results_comparison.ipynb # Benchmarking and result analysis
+│   ├── raw/                    # Original Kaggle dataset (updated_data.csv)
+│   └── processed/              # Simulation runs (.pkl), cleaned DataFrames
 ├── src/
-│   ├── data/        # Data loading and entity mapping
-│   ├── graph/       # Graph builder, topology, and vulnerability metrics
-│   ├── simulation/  # Mesa-based agents, scenarios, and scheduler
-│   ├── gnn/         # GAT model, dataset, training loop, evaluation
-│   └── viz/         # Visualization utilities (dark theme)
-├── results/         # Saved figures, trained model checkpoints (.pt)
-├── tests/
+│   ├── agents/                 # Digital twin agent classes (one per node type)
+│   ├── data/                   # CSV loader, preprocessor, entity mapping
+│   ├── graph/                  # Graph builder, topology inference, metrics
+│   ├── simulation/             # Mesa DTNetModel, scenarios, data generator
+│   ├── gnn/                    # GATConv model, dataset, training, evaluation
+│   └── viz/                    # Thesis figures and dashboard visualisations
+├── dashboard/
+│   └── app.py                  # Streamlit single-page demo
+├── notebooks/                  # Exploratory Jupyter notebooks (phases 1–5)
+├── results/                    # Saved figures (300 DPI) and model checkpoints
+├── tests/                      # Unit tests
+├── instructions/               # Project guidance (CLAUDE.md companion docs)
 ├── requirements.txt
 └── CLAUDE.md
 ```
 
 ---
 
-## Tech Stack
+## Key Results
 
-| Component | Library |
-|-----------|---------|
-| Graph modeling | NetworkX (`DiGraph`) |
-| Agent-based simulation | Mesa |
-| GNN (Graph Attention Network) | PyTorch Geometric |
-| Deep learning framework | PyTorch |
-| Data manipulation | Pandas, NumPy |
-| Machine learning utilities | scikit-learn |
-| Visualization | Matplotlib (dark theme), Seaborn, Plotly |
+All output figures are saved to `results/` at 300 DPI. Key findings:
+
+- **Networked outperforms isolated** across all 5 random seeds on MAE, RMSE, F1, Precision, and Recall — confirming RQ3.
+- **Critical-hub disruption** (highest betweenness node) caused the widest cascade: 71 / 82 nodes disrupted within 1 simulation step.
+- **Supplier cascade** (all 10 suppliers simultaneously) produced a slower but sustained health degradation, reaching a final network health of ~66%.
+- See `results/fig_robustness_comparison.png`, `results/fig_scenario_comparison.png`, and `results/fig_full_graph.png` for the main thesis figures.
 
 ---
 
-## Installation
+## Graph Topology
 
-```bash
-pip install -r requirements.txt
-```
+![DTNet Graph Topology](results/fig_full_graph.png)
 
-> **Note:** PyTorch Geometric requires a compatible version of PyTorch. Refer to the [official installation guide](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html) if you encounter issues. GPU training was performed on Google Colab.
+82 nodes · 219 edges · 5 node types · 4 edge types
 
 ---
 
-## Running the Project
+## Author
 
-Execute the notebooks **in order**:
+[Your Name] — [your.email@unil.ch]
 
-1. **`01_data_exploration.ipynb`** — Load raw data, perform EDA, and export cleaned features to `data/processed/`.
-2. **`02_graph_construction.ipynb`** — Build the multi-layered directed graph (suppliers → plants → machines → parts) and compute structural metrics.
-3. **`03_simulation_runs.ipynb`** — Run five disruption scenarios using the Mesa agent-based model and export simulation traces.
-4. **`04_gnn_training.ipynb`** — Train the Graph Attention Network on simulation-labelled graphs; best checkpoint saved to `results/dtnet_gnn_best.pt`.
-5. **`05_results_comparison.ipynb`** — Compare DTNet predictions against an isolated (non-graph) baseline; generate final figures.
+## Supervisor
 
-All outputs (figures, model weights) are written to the `results/` directory.
-
----
-
-## Disruption Scenarios
-
-Five scenarios are evaluated in Phase 3:
-
-| ID | Scenario | Description |
-|----|----------|-------------|
-| S1 | Single supplier failure | One critical supplier goes offline |
-| S2 | Logistics bottleneck | A transport node becomes saturated |
-| S3 | Multi-supplier disruption | Simultaneous failure of several suppliers |
-| S4 | Targeted attack | High-centrality nodes are selectively removed |
-| S5 | Random disruption | Uniformly random node failures |
-
----
-
-## Reproducibility
-
-All experiments use fixed random seeds (`np.random.seed(42)`, `torch.manual_seed(42)`). Results are fully reproducible given the same environment and data files.
+**Prof. Yash Raj Shrestha** — HEC Lausanne, Department of Information Systems

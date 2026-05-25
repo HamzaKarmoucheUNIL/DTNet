@@ -52,7 +52,7 @@ def plot_attention_heatmap(attention: Dict, runs: List[Dict], save_dir: Path) ->
     ]
     vals  = [e['attention'] for e in top_k]
     max_v = max(vals) if vals else 1.0
-    ax1.barh(range(len(labels)), vals, height=0.7, edgecolor='white', linewidth=0.3,
+    ax1.barh(range(len(labels)), vals, height=0.7, edgecolor='#CCCCCC', linewidth=0.3,
              color=[plt.cm.YlOrRd(v / max_v) for v in vals])
     ax1.set_yticks(range(len(labels)))
     ax1.set_yticklabels(labels, fontsize=8)
@@ -67,18 +67,18 @@ def plot_attention_heatmap(attention: Dict, runs: List[Dict], save_dir: Path) ->
     ax2.set_xlabel('Destination Layer', fontsize=10)
     ax2.set_ylabel('Source Layer', fontsize=10)
     ax2.set_title('Layer-to-Layer Attention Flow\n(row-normalised, top-K edges only)',
-                  color='white', fontsize=10, pad=8)
+                  color='#333333', fontsize=10, pad=8)
     for i in range(L):
         for j in range(L):
             if mat_norm[i, j] > 0.01:
                 ax2.text(j, i, f'{mat_norm[i, j]:.2f}', ha='center', va='center',
-                         fontsize=8.5, color='black' if mat_norm[i, j] > 0.5 else 'white')
+                         fontsize=8.5, color='#333333' if mat_norm[i, j] > 0.5 else '#333333')
     cb = fig.colorbar(im, ax=ax2, shrink=0.82, pad=0.03)
-    cb.set_label('Normalised Attention', color='white', fontsize=9)
-    cb.ax.tick_params(colors='white')
+    cb.set_label('Normalised Attention', color='#333333', fontsize=9)
+    cb.ax.tick_params(colors='#333333')
 
     fig.suptitle('GAT Attention Analysis — Which Supply-Chain Connections Are Critical?',
-                 color='white', fontsize=13, y=1.02)
+                 color='#333333', fontsize=13, y=1.02)
     plt.tight_layout()
     return _savefig(fig, save_dir, 'fig4_attention_heatmap')
 
@@ -111,21 +111,21 @@ def plot_propagation_timeline(
     for yi, nid in enumerate(order):
         sev = final_sev.get(nid, 0.0)
         ax1.barh(yi, T - first_t[nid], left=first_t[nid], color=CASCADE_CMAP(sev),
-                 height=0.72, alpha=0.88, edgecolor='white', linewidth=0.2)
-        ax1.text(first_t[nid] - 0.15, yi, nid, ha='right', va='center', fontsize=6.5, color='white')
+                 height=0.72, alpha=0.88, edgecolor='#CCCCCC', linewidth=0.2)
+        ax1.text(first_t[nid] - 0.15, yi, nid, ha='right', va='center', fontsize=6.5, color='#333333')
         ax1.scatter([-0.9], [yi], color=LAYER_COLORS.get(n2layer.get(nid, ''), '#888888'),
                     s=28, zorder=5, clip_on=False)
 
     ax1.set_xlim(-2.5, T + 0.2); ax1.set_yticks([])
     ax1.grid(True, axis='x', alpha=0.3); ax1.set_facecolor(BG)
-    ax1.set_title('Disruption Propagation Timeline', color='white', fontsize=12, pad=8)
+    ax1.set_title('Disruption Propagation Timeline', color='#333333', fontsize=12, pad=8)
     ax1.set_xlabel('Simulation Timestep', fontsize=10)
 
     sm = plt.cm.ScalarMappable(cmap=CASCADE_CMAP, norm=plt.Normalize(0, 1))
     sm.set_array([])
     cb = fig.colorbar(sm, ax=ax1, pad=0.01, shrink=0.82, aspect=22)
-    cb.set_label('Final Severity', color='white', fontsize=9)
-    cb.ax.tick_params(colors='white')
+    cb.set_label('Final Severity', color='#333333', fontsize=9)
+    cb.ax.tick_params(colors='#333333')
     patches = [mpatches.Patch(color=LAYER_COLORS[l], label=l.capitalize()) for l in LAYER_ORDER]
     ax1.legend(handles=patches, loc='lower right', fontsize=8, framealpha=0.78)
 
@@ -136,5 +136,5 @@ def plot_propagation_timeline(
     _setup_ax(ax2, 'Network Health Over Time', xlabel='Simulation Timestep', ylabel='Avg Health Score')
 
     fig.suptitle('Disruption Propagation Through the Supply-Chain Network',
-                 color='white', fontsize=14, y=1.01)
+                 color='#333333', fontsize=14, y=1.01)
     return _savefig(fig, save_dir, 'fig5_propagation_timeline')
