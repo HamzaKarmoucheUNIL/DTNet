@@ -253,18 +253,22 @@ class DTNetModel(mesa.Model):
         model_df = self.datacollector.get_model_vars_dataframe()
         agent_df = self.datacollector.get_agent_vars_dataframe()
 
-        agent_step_levels: set = set(agent_df.index.get_level_values(0).unique())
+        # Mesa 3.x stores agent records keyed by model.time (float: 1.0, 2.0, …)
+        # while get_model_vars_dataframe() returns a plain integer index (0, 1, …).
+        # Use _collection_steps to align them by position, not by value.
+        collection_times: List[float] = self.datacollector._collection_steps
+        agent_step_set: set = set(agent_df.index.get_level_values(0).unique())
         id_to_node: Dict[int, str] = {
             a.unique_id: a.node_id for a in self.agents
         }
 
         history: List[Dict[str, Any]] = []
 
-        for step_idx in model_df.index:
+        for pos, step_idx in enumerate(model_df.index):
             node_states: Dict[str, Dict[str, float]] = {}
 
-            if step_idx in agent_step_levels:
-                step_df = agent_df.loc[step_idx]
+            if pos < len(collection_times) and collection_times[pos] in agent_step_set:
+                step_df = agent_df.loc[collection_times[pos]]
                 for agent_id, node_id in id_to_node.items():
                     if agent_id in step_df.index:
                         row = step_df.loc[agent_id]

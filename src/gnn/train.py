@@ -1,8 +1,9 @@
 """train.py — Training loop for DTNetGNN and IsolatedBaseline.
 
 Trains both models on simulation run data loaded via ``build_dataloaders``.
-Applies early stopping on validation MSE and saves the best checkpoint for
-each model.  Returns full training histories for downstream analysis.
+Uses a combined loss: MSE regression loss + weighted BCE classification loss
+(binary target: severity > DISRUPTION_THRESHOLD).  Early stopping tracks
+the combined validation loss.  Saves the best checkpoint for each model.
 
 Public API: ``run_training(train_loader, val_loader, device) -> (gnn_hist, base_hist)``
 """
@@ -15,6 +16,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from src.gnn.dataset import build_dataloaders
 from src.gnn.model import DTNetGNN, IsolatedBaseline
@@ -31,13 +33,26 @@ torch.manual_seed(42)
 # Constants
 # ---------------------------------------------------------------------------
 
-LR: float = 0.0003
+# HIDDEN_CHANNELS: int = 64    # original
+HIDDEN_CHANNELS: int = 128     # improved
+
+# NUM_HEADS: int = 4           # original
+NUM_HEADS: int = 4             # keep (already good)
+
+# LEARNING_RATE: float = 0.0003  # original
+LEARNING_RATE: float = 0.001     # lower for stability
+
+# DROPOUT: float = 0.3         # original
+DROPOUT: float = 0.2           # slightly less regularization
+
 WEIGHT_DECAY: float = 5e-4
 PATIENCE: int = 30
 MAX_EPOCHS: int = 200
 LOG_INTERVAL: int = 10
 GNN_SAVE_PATH: Path = Path("results/dtnet_gnn_best.pt")
 BASELINE_SAVE_PATH: Path = Path("results/isolated_baseline_best.pt")
+DISRUPTION_THRESHOLD: float = 0.3   # severity above which a node is classified as disrupted
+CLS_LOSS_WEIGHT: float = 0.5        # weight of BCE classification loss in combined loss
 
 # ---------------------------------------------------------------------------
 # Private helpers
@@ -48,10 +63,22 @@ def _train_epoch(
     model: nn.Module,
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
-    criterion: nn.Module,
     device: torch.device,
 ) -> float:
-    """Run one training epoch; return mean MSE loss averaged over all nodes."""
+    """Run one training epoch; return mean combined loss averaged over all nodes.
+
+    Combined loss = MSE(reg_out, y) + CLS_LOSS_WEIGHT * BCE(cls_out, binary_y),
+    where binary_y = (y > DISRUPTION_THRESHOLD).
+
+    Args:
+        model: DTNetGNN or IsolatedBaseline (both return (reg_out, cls_out)).
+        loader: Training DataLoader.
+        optimizer: Optimiser to step.
+        device: Device for tensor ops.
+
+    Returns:
+        Node-weighted mean combined loss over all batches.
+    """
     model.train()
     total_loss: float = 0.0
     total_nodes: int = 0
@@ -61,8 +88,15 @@ def _train_epoch(
         edge_attr: torch.Tensor | None = getattr(batch, "edge_attr", None)
 
         optimizer.zero_grad()
-        preds: torch.Tensor = model(batch.x, batch.edge_index, edge_attr)
-        loss: torch.Tensor = criterion(preds, batch.y)
+        reg_out, cls_out = model(batch.x, batch.edge_index, edge_attr)
+
+        reg_loss: torch.Tensor = F.mse_loss(reg_out.squeeze(), batch.y)
+        cls_target: torch.Tensor = (batch.y > DISRUPTION_THRESHOLD).float()
+        cls_loss: torch.Tensor = F.binary_cross_entropy_with_logits(
+            cls_out.squeeze(), cls_target
+        )
+        loss: torch.Tensor = reg_loss + CLS_LOSS_WEIGHT * cls_loss
+
         loss.backward()
         optimizer.step()
 
@@ -80,19 +114,36 @@ def _evaluate(
     criterion: nn.Module,
     device: torch.device,
 ) -> Dict[str, float]:
-    """Evaluate model on a loader; return {mse, mae, r2} computed globally."""
+    """Evaluate model on a loader; return {mse, mae, r2, total_loss} globally.
+
+    ``total_loss`` mirrors the training combined loss and is used for early
+    stopping.  ``mse``, ``mae``, and ``r2`` are regression-only metrics for
+    reporting and the final validation comparison.
+
+    Args:
+        model: DTNetGNN or IsolatedBaseline.
+        loader: DataLoader to evaluate on.
+        criterion: MSELoss instance used for the regression metric.
+        device: Device for tensor ops.
+
+    Returns:
+        Dict with keys ``mse``, ``mae``, ``r2``, ``total_loss``.
+    """
     model.eval()
     all_preds: List[torch.Tensor] = []
+    all_cls:   List[torch.Tensor] = []
     all_targets: List[torch.Tensor] = []
 
     for batch in loader:
         batch = batch.to(device)
         edge_attr: torch.Tensor | None = getattr(batch, "edge_attr", None)
-        preds: torch.Tensor = model(batch.x, batch.edge_index, edge_attr)
-        all_preds.append(preds.cpu())
+        reg_out, cls_out = model(batch.x, batch.edge_index, edge_attr)
+        all_preds.append(reg_out.cpu())
+        all_cls.append(cls_out.cpu())
         all_targets.append(batch.y.cpu())
 
     y_pred: torch.Tensor = torch.cat(all_preds)    # (N_total,)
+    y_cls:  torch.Tensor = torch.cat(all_cls)      # (N_total,) raw logits
     y_true: torch.Tensor = torch.cat(all_targets)  # (N_total,)
 
     mse: float = criterion(y_pred, y_true).item()
@@ -102,7 +153,13 @@ def _evaluate(
     ss_tot: torch.Tensor = torch.sum((y_true - y_true.mean()) ** 2)
     r2: float = (1.0 - ss_res / (ss_tot + 1e-8)).item()
 
-    return {"mse": mse, "mae": mae, "r2": r2}
+    cls_target: torch.Tensor = (y_true > DISRUPTION_THRESHOLD).float()
+    total_loss: float = (
+        F.mse_loss(y_pred, y_true)
+        + CLS_LOSS_WEIGHT * F.binary_cross_entropy_with_logits(y_cls, cls_target)
+    ).item()
+
+    return {"mse": mse, "mae": mae, "r2": r2, "total_loss": total_loss}
 
 
 def train_model(
@@ -115,9 +172,10 @@ def train_model(
 ) -> Dict[str, List[float] | int | float]:
     """Train a single model with early stopping; save best checkpoint.
 
-    Trains for up to MAX_EPOCHS epochs.  Stops early if validation MSE does
-    not improve for PATIENCE consecutive epochs.  Saves ``model.state_dict()``
-    at the epoch with the lowest validation MSE.
+    Trains for up to MAX_EPOCHS epochs.  Stops early if the combined
+    validation loss (MSE + CLS_LOSS_WEIGHT * BCE) does not improve for
+    PATIENCE consecutive epochs.  Saves ``model.state_dict()`` at the epoch
+    with the lowest combined validation loss.
 
     Args:
         model: Initialised model to train (DTNetGNN or IsolatedBaseline).
@@ -129,8 +187,8 @@ def train_model(
 
     Returns:
         History dict with keys:
-          ``train_loss``  (List[float]) — per-epoch training MSE,
-          ``val_loss``    (List[float]) — per-epoch validation MSE,
+          ``train_loss``  (List[float]) — per-epoch training combined loss,
+          ``val_loss``    (List[float]) — per-epoch validation combined loss,
           ``val_mae``     (List[float]) — per-epoch validation MAE,
           ``best_epoch``  (int)         — epoch index (0-based) of best model,
           ``best_val_loss`` (float)     — best validation MSE achieved.
@@ -139,7 +197,7 @@ def train_model(
     model = model.to(device)
 
     optimizer: torch.optim.Optimizer = torch.optim.Adam(
-        model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY
+        model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
     )
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", patience=10, factor=0.5
@@ -159,10 +217,10 @@ def train_model(
     print(f"\n[train] ── Training {label} ──────────────────────────────────────")
 
     for epoch in range(MAX_EPOCHS):
-        train_loss: float = _train_epoch(model, train_loader, optimizer, criterion, device)
+        train_loss: float = _train_epoch(model, train_loader, optimizer, device)
         val_metrics: Dict[str, float] = _evaluate(model, val_loader, criterion, device)
 
-        val_loss: float = val_metrics["mse"]
+        val_loss: float = val_metrics["total_loss"]
         val_mae: float = val_metrics["mae"]
 
         history["train_loss"].append(train_loss)   # type: ignore[union-attr]
@@ -173,14 +231,14 @@ def train_model(
         if epoch % LOG_INTERVAL == 0:
             print(
                 f"[train] {label}  epoch={epoch:03d}"
-                f"  train_mse={train_loss:.6f}"
-                f"  val_mse={val_loss:.6f}"
+                f"  train_loss={train_loss:.6f}"
+                f"  val_loss={val_loss:.6f}"
                 f"  val_mae={val_mae:.6f}"
             )
 
         scheduler.step(val_loss)
 
-        # Early stopping — track best val MSE
+        # Early stopping — track best combined val loss
         if val_loss < history["best_val_loss"]:  # type: ignore[operator]
             history["best_val_loss"] = val_loss
             history["best_epoch"] = epoch
@@ -198,7 +256,7 @@ def train_model(
     best_ep: int = history["best_epoch"]  # type: ignore[assignment]
     print(
         f"[train] Best {label}: epoch={best_ep}"
-        f"  val_mse={history['best_val_loss']:.6f}"
+        f"  val_loss={history['best_val_loss']:.6f}"
         f"  → saved to {save_path}"
     )
     return history
@@ -240,13 +298,21 @@ def run_training(
     in_channels: int = sample_batch.x.shape[1]
 
     # ── Train DTNetGNN ───────────────────────────────────────────────────────
-    gnn_model: DTNetGNN = DTNetGNN(in_channels=in_channels)
+    gnn_model: DTNetGNN = DTNetGNN(
+        in_channels=in_channels,
+        hidden_channels=HIDDEN_CHANNELS,
+        heads_1=NUM_HEADS,
+        dropout=DROPOUT,
+    )
     gnn_history: Dict = train_model(
         gnn_model, train_loader, val_loader, GNN_SAVE_PATH, device, label="DTNetGNN"
     )
 
     # ── Train IsolatedBaseline ───────────────────────────────────────────────
-    baseline_model: IsolatedBaseline = IsolatedBaseline(in_channels=in_channels)
+    baseline_model: IsolatedBaseline = IsolatedBaseline(
+        in_channels=in_channels,
+        hidden_channels=HIDDEN_CHANNELS,
+    )
     baseline_history: Dict = train_model(
         baseline_model, train_loader, val_loader,
         BASELINE_SAVE_PATH, device, label="IsolatedBaseline"
@@ -288,5 +354,15 @@ def run_training(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    train_loader, val_loader, _ = build_dataloaders()
+    from src.data.entity_mapping import build_entity_mappings
+    from src.data.loader import load_csv
+    from src.data.preprocess import preprocess
+    from src.graph.builder import build_graph
+    from src.graph.topology import infer_topology
+    _df_raw = load_csv("updated_data.csv")
+    _df_clean, _ = preprocess(_df_raw)
+    _em = build_entity_mappings(_df_raw)
+    _nodes, _edges = infer_topology(_em)
+    _G = build_graph(_nodes, _edges, _df_clean)
+    train_loader, val_loader, _ = build_dataloaders(G=_G)
     run_training(train_loader, val_loader)

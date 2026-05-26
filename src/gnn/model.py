@@ -7,7 +7,11 @@ Defines two models:
     using only node features — no graph structure.  Used as the RQ3 baseline
     to quantify the value of modelling supply-chain interconnections.
 
-Both models output one scalar in [0, 1] per node (severity).
+Both models have two output heads:
+  - Regression head: predicted disruption severity (float in [0, 1]).
+  - Classification head: raw logit for binary disrupted/not-disrupted
+    (threshold 0.3; pass to BCEWithLogitsLoss during training).
+Both ``forward()`` calls return ``(reg_out, cls_out)``.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ torch.manual_seed(42)
 # Constants
 # ---------------------------------------------------------------------------
 
-IN_CHANNELS: int = 10       # node feature dimension (see dataset.py)
+IN_CHANNELS: int = 16       # node feature dimension: 10 twin + 6 structural (see dataset.py)
 HIDDEN_CHANNELS: int = 64   # hidden / per-head output dimension
 EDGE_DIM: int = 3           # edge feature dimension: [criticality_weight, flow_capacity, shared_parts_count]
 GAT_HEADS_1: int = 4        # attention heads in first GATConv layer
@@ -52,13 +56,13 @@ class DTNetGNN(nn.Module):
     Dropout(0.3)
     GATConv(256 → 64, heads=1)           → 64-dim per node
     Dropout(0.3)
-    Linear(64 → 1)
-    Sigmoid                              → severity ∈ [0, 1] per node
+    reg_head: Linear(64 → 1) + Sigmoid   → severity ∈ [0, 1] per node
+    cls_head: Linear(64 → 1)             → raw logit (disrupted yes/no)
 
     Args:
-        in_channels: Number of input node features. Default 10.
+        in_channels: Number of input node features. Default 16.
         hidden_channels: Per-head hidden dimension. Default 64.
-        edge_dim: Edge feature dimension. Default 2.
+        edge_dim: Edge feature dimension. Default 3.
         heads_1: Number of attention heads for the first GAT layer. Default 4.
         heads_2: Number of attention heads for the second GAT layer. Default 1.
         dropout: Dropout probability. Default 0.3.
@@ -95,16 +99,17 @@ class DTNetGNN(nn.Module):
             concat=False,   # output shape: (N, hidden_channels)
         )
 
-        # Final projection to a single severity score per node
-        self.lin: nn.Linear = nn.Linear(hidden_channels, 1)
+        # Dual output heads (share the same GAT backbone)
+        self.reg_head: nn.Linear = nn.Linear(hidden_channels, 1)   # regression
+        self.cls_head: nn.Linear = nn.Linear(hidden_channels, 1)   # classification logit
 
     def forward(
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor,
         edge_attr: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        """Compute disruption severity for every node in the batch.
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute disruption severity and binary disruption logit for every node.
 
         Args:
             x: Node feature matrix of shape ``(N, in_channels)``.
@@ -114,7 +119,11 @@ class DTNetGNN(nn.Module):
                 layers will fall back to structure-only attention.
 
         Returns:
-            Tensor of shape ``(N,)`` with predicted severity in [0, 1].
+            Tuple ``(reg_out, cls_out)`` where:
+            - ``reg_out``: shape ``(N,)``, predicted severity in [0, 1].
+            - ``cls_out``: shape ``(N,)``, raw logit for binary disruption
+              classification (disrupted if logit > 0, i.e. sigmoid > 0.5;
+              use BCEWithLogitsLoss during training).
         """
         # GATConv layer 1 — learns which edges matter most
         x = self.conv1(x, edge_index, edge_attr=edge_attr)  # (N, 256)
@@ -126,10 +135,10 @@ class DTNetGNN(nn.Module):
         x = F.relu(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
 
-        # Project to scalar and squash to [0, 1]
-        x = self.lin(x)          # (N, 1)
-        x = torch.sigmoid(x)     # (N, 1)
-        return x.squeeze(-1)     # (N,)
+        # Dual output heads
+        reg_out: torch.Tensor = torch.sigmoid(self.reg_head(x)).squeeze(-1)  # (N,)
+        cls_out: torch.Tensor = self.cls_head(x).squeeze(-1)                 # (N,) raw logit
+        return reg_out, cls_out
 
 
 # ---------------------------------------------------------------------------
@@ -150,11 +159,11 @@ class IsolatedBaseline(nn.Module):
     ------------
     Linear(in_channels → hidden_channels)
     ReLU
-    Linear(hidden_channels → 1)
-    Sigmoid  → severity ∈ [0, 1] per node
+    reg_head: Linear(hidden_channels → 1) + Sigmoid → severity ∈ [0, 1]
+    cls_head: Linear(hidden_channels → 1)           → raw logit (disrupted yes/no)
 
     Args:
-        in_channels: Number of input node features. Default 10.
+        in_channels: Number of input node features. Default 16.
         hidden_channels: Hidden layer size. Default 64.
     """
 
@@ -166,15 +175,16 @@ class IsolatedBaseline(nn.Module):
         super().__init__()
 
         self.fc1: nn.Linear = nn.Linear(in_channels, hidden_channels)
-        self.fc2: nn.Linear = nn.Linear(hidden_channels, 1)
+        self.reg_head: nn.Linear = nn.Linear(hidden_channels, 1)   # regression
+        self.cls_head: nn.Linear = nn.Linear(hidden_channels, 1)   # classification logit
 
     def forward(
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor | None = None,   # accepted but ignored
         edge_attr: torch.Tensor | None = None,    # accepted but ignored
-    ) -> torch.Tensor:
-        """Compute disruption severity for every node using features only.
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute disruption severity and binary logit for every node using features only.
 
         The ``edge_index`` and ``edge_attr`` arguments are accepted for API
         compatibility with ``DTNetGNN`` but are intentionally not used.
@@ -185,9 +195,12 @@ class IsolatedBaseline(nn.Module):
             edge_attr: Ignored. Kept for interface parity with DTNetGNN.
 
         Returns:
-            Tensor of shape ``(N,)`` with predicted severity in [0, 1].
+            Tuple ``(reg_out, cls_out)`` where:
+            - ``reg_out``: shape ``(N,)``, predicted severity in [0, 1].
+            - ``cls_out``: shape ``(N,)``, raw logit for binary disruption
+              classification (use BCEWithLogitsLoss during training).
         """
-        x = F.relu(self.fc1(x))   # (N, hidden_channels)
-        x = self.fc2(x)            # (N, 1)
-        x = torch.sigmoid(x)       # (N, 1)
-        return x.squeeze(-1)       # (N,)
+        h: torch.Tensor = F.relu(self.fc1(x))                               # (N, hidden_channels)
+        reg_out: torch.Tensor = torch.sigmoid(self.reg_head(h)).squeeze(-1)  # (N,)
+        cls_out: torch.Tensor = self.cls_head(h).squeeze(-1)                 # (N,) raw logit
+        return reg_out, cls_out

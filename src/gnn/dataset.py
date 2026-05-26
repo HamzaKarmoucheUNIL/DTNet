@@ -99,25 +99,83 @@ def _extract_edge_attrs(
     return torch.tensor(rows, dtype=torch.float)
 
 
-def _fit_scaler(runs: List[Dict], train_indices: List[int]) -> StandardScaler:
+def _compute_structural_features(
+    G: nx.DiGraph,
+    node_order: List[str],
+) -> np.ndarray:
+    """Compute 6 structural/topological features for every node in node_order.
+
+    All six metrics are computed once on G and aligned to ``node_order``.
+    Values are already in [0, 1] (centrality measures are normalised by
+    definition; in/out-degree is divided by the graph maximum).
+
+    Feature order (appended after existing twin features):
+      [degree_centrality, betweenness_centrality, in_degree_norm,
+       out_degree_norm, closeness_centrality, pagerank]
+
+    Args:
+        G: DTNet DiGraph (topology must match ``node_order``).
+        node_order: Canonical node ID ordering matching simulation run dicts.
+
+    Returns:
+        ``np.ndarray`` of shape ``(N, 6)`` with dtype float32, values in [0, 1].
+    """
+    deg_cen: Dict[str, float] = nx.degree_centrality(G)
+    btw_cen: Dict[str, float] = nx.betweenness_centrality(G, normalized=True)
+    clo_cen: Dict[str, float] = nx.closeness_centrality(G)
+    pgr: Dict[str, float] = nx.pagerank(G)
+
+    in_deg_raw: Dict[str, int] = dict(G.in_degree())
+    out_deg_raw: Dict[str, int] = dict(G.out_degree())
+    max_in: float = float(max(in_deg_raw.values())) if in_deg_raw else 1.0
+    max_out: float = float(max(out_deg_raw.values())) if out_deg_raw else 1.0
+    if max_in == 0.0:
+        max_in = 1.0
+    if max_out == 0.0:
+        max_out = 1.0
+
+    rows: List[List[float]] = []
+    for nid in node_order:
+        rows.append([
+            float(deg_cen.get(nid, 0.0)),
+            float(btw_cen.get(nid, 0.0)),
+            float(in_deg_raw.get(nid, 0)) / max_in,
+            float(out_deg_raw.get(nid, 0)) / max_out,
+            float(clo_cen.get(nid, 0.0)),
+            float(pgr.get(nid, 0.0)),
+        ])
+    return np.array(rows, dtype=np.float32)   # (N, 6)
+
+
+def _fit_scaler(
+    runs: List[Dict],
+    train_indices: List[int],
+    struct_feats: Optional[np.ndarray] = None,
+) -> StandardScaler:
     """Fit a StandardScaler on the training-set node features.
 
     Stacks all node feature matrices from training runs into one matrix and
-    fits the scaler. Columns with zero variance (e.g., disruption_severity
-    is always 0.0 in the initial snapshot) have their scale set to 1.0 to
-    prevent division-by-zero during transform.
+    fits the scaler.  If ``struct_feats`` is provided (shape ``(N, 6)``),
+    the structural features are concatenated to each run's feature matrix
+    BEFORE fitting so the scaler covers the full augmented feature space.
+    Columns with zero variance have their scale set to 1.0 to prevent
+    division-by-zero during transform.
 
     Args:
         runs: Full list of simulation run dicts.
         train_indices: Indices of the runs assigned to the training split.
+        struct_feats: Optional ``(N_nodes, 6)`` array of pre-computed
+            structural/topological features to append before fitting.
 
     Returns:
         Fitted ``StandardScaler`` ready for ``transform()``.
     """
-    matrices: List[np.ndarray] = [
-        np.array(runs[i]["initial_features"], dtype=np.float32)
-        for i in train_indices
-    ]
+    matrices: List[np.ndarray] = []
+    for i in train_indices:
+        feat: np.ndarray = np.array(runs[i]["initial_features"], dtype=np.float32)
+        if struct_feats is not None:
+            feat = np.concatenate([feat, struct_feats], axis=1)  # (N, F+6)
+        matrices.append(feat)
     all_features: np.ndarray = np.vstack(matrices)   # (N_train_nodes_total, F)
 
     scaler: StandardScaler = StandardScaler()
@@ -133,10 +191,13 @@ def _run_to_data(
     edge_index: torch.Tensor,
     edge_attr: Optional[torch.Tensor],
     scaler: StandardScaler,
+    struct_feats: Optional[np.ndarray] = None,
 ) -> Data:
     """Convert a single simulation run dict to a PyG Data object.
 
     Node features (x) are normalized with the pre-fitted StandardScaler.
+    If ``struct_feats`` is provided it is concatenated to each run's raw
+    feature matrix BEFORE scaling (the scaler was fitted on the same layout).
     Targets (y) are final disruption severities in [0, 1] — no normalization
     applied so they remain interpretable as probabilities.
 
@@ -144,16 +205,19 @@ def _run_to_data(
         run: Run dict with keys ``initial_features``, ``final_severities``,
             ``edge_index``, ``node_order``.
         edge_index: Precomputed (2, E) edge index tensor (shared across runs).
-        edge_attr: Optional (E, 2) edge attribute tensor (shared across runs).
+        edge_attr: Optional (E, 3) edge attribute tensor (shared across runs).
         scaler: Fitted StandardScaler for node features.
+        struct_feats: Optional ``(N, 6)`` structural feature array to append.
 
     Returns:
         ``torch_geometric.data.Data`` with x, edge_index, edge_attr, y.
     """
     # Node features — normalize with training scaler (COMMON_MISTAKES #7)
     x_raw: np.ndarray = np.array(run["initial_features"], dtype=np.float32)
+    if struct_feats is not None:
+        x_raw = np.concatenate([x_raw, struct_feats], axis=1)  # (N, F+6)
     x_norm: np.ndarray = scaler.transform(x_raw).astype(np.float32)
-    x: torch.Tensor = torch.from_numpy(x_norm)                 # (N, F)
+    x: torch.Tensor = torch.from_numpy(x_norm)                 # (N, F) or (N, F+6)
 
     # Targets — final disruption severity per node
     y_np: np.ndarray = np.array(run["final_severities"], dtype=np.float32)
@@ -221,9 +285,11 @@ def build_dataloaders(
     """Load simulation_runs.pkl and return train/val/test PyG DataLoaders.
 
     Each simulation run becomes one PyG ``Data`` graph:
-      - ``x``          : (N, 10) normalized node feature matrix.
+      - ``x``          : (N, 16) normalized node feature matrix
+                         (10 twin features + 6 structural, when G is provided).
       - ``edge_index`` : (2, E) directed edge index.
-      - ``edge_attr``  : (E, 2) [criticality_weight, flow_capacity] if G given.
+      - ``edge_attr``  : (E, 3) [criticality_weight, flow_capacity,
+                         shared_parts_count_norm] if G given.
       - ``y``          : (N,)  final disruption severity per node in [0, 1].
 
     Normalization is fitted on the training split only to prevent leakage.
@@ -262,11 +328,14 @@ def build_dataloaders(
     n_edges: int = edge_index.shape[1]
 
     edge_attr: Optional[torch.Tensor] = None
+    struct_feats: Optional[np.ndarray] = None
     if G is not None:
         edge_attr = _extract_edge_attrs(G, node_order)
-        print(f"[dataset] Edge attrs extracted — edges={n_edges}  edge_features=2")
+        print(f"[dataset] Edge attrs extracted — edges={n_edges}  edge_features=3")
+        struct_feats = _compute_structural_features(G, node_order)
+        print(f"[dataset] Structural features computed — {struct_feats.shape[1]} per node")
     else:
-        print(f"[dataset] No G provided — edge_attr=None  edges={n_edges}")
+        print(f"[dataset] No G provided — edge_attr=None  struct_feats=None  edges={n_edges}")
 
     # ── Train / Val / Test split (stratified by index) ──────────────────────
     test_ratio: float = 1.0 - train_ratio - val_ratio
@@ -282,13 +351,16 @@ def build_dataloaders(
     )
 
     # ── Fit scaler on training features only (prevents leakage) ─────────────
-    scaler: StandardScaler = _fit_scaler(runs, train_idx)
+    scaler: StandardScaler = _fit_scaler(runs, train_idx, struct_feats)
+
+    n_features_new: int = n_features + (struct_feats.shape[1] if struct_feats is not None else 0)
+    print(f"[dataset] Feature count: {n_features} (original) → {n_features_new} (with structural)")
 
     # ── Build Data object lists ──────────────────────────────────────────────
     def _build_list(idx_list: List[int]) -> List[Data]:
         """Convert a list of run indices to PyG Data objects."""
         return [
-            _run_to_data(runs[i], edge_index, edge_attr, scaler)
+            _run_to_data(runs[i], edge_index, edge_attr, scaler, struct_feats)
             for i in idx_list
         ]
 
