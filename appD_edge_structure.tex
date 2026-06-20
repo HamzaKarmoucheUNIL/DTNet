@@ -1,0 +1,11 @@
+\small
+\begin{tabularx}{\textwidth}{l X r c c}
+\toprule
+\textbf{Edge type} & \textbf{Connected layers} & \textbf{Count} & \textbf{Mean crit.} & \textbf{Mean flow}\\
+\midrule
+\texttt{material\_flow} & supplier$\to$logistics, logistics$\to$plant, plant$\to$distribution & 26 & 0.79 & 0.90\\
+\texttt{operational} & plant$\to$machine & 63 & 0.90 & 1.00\\
+\texttt{process\_chain} & machine$\to$machine & 58 & 0.70 & 0.85\\
+\texttt{shared\_part\_dependency} & machine$\to$machine & 72 & 0.33 & 0.70\\
+\bottomrule
+\end{tabularx}

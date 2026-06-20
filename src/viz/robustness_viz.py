@@ -56,9 +56,9 @@ def plot_comparison(summary: Dict[str, Any]) -> None:
     w = 0.35
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.bar(x - w / 2, net_means, w, yerr=net_stds,
-           label="Networked (DTNetGNN)", color=C_NET, **_err_kw())
+           label="Networked (DTNetGNN)", color=C_NET, error_kw=_err_kw())
     ax.bar(x + w / 2, iso_means, w, yerr=iso_stds,
-           label="Isolated Baseline", color=C_ISO, **_err_kw())
+           label="Isolated Baseline", color=C_ISO, error_kw=_err_kw())
 
     ax.set_xticks(x)
     ax.set_xticklabels(METRIC_LABELS, fontsize=12)
@@ -72,7 +72,7 @@ def plot_comparison(summary: Dict[str, Any]) -> None:
     FIG1_PATH.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(FIG1_PATH, dpi=300, bbox_inches="tight")
     plt.close(fig)
-    print(f"[robustness_viz] Saved Figure 1 → {FIG1_PATH}")
+    print(f"[robustness_viz] Saved Figure 1 -> {FIG1_PATH}")
 
 
 def plot_seeds_stability(seeds: List[int], per_seed: List[Dict[str, Any]]) -> None:
@@ -128,7 +128,7 @@ def plot_seeds_stability(seeds: List[int], per_seed: List[Dict[str, Any]]) -> No
     FIG2_PATH.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(FIG2_PATH, dpi=300, bbox_inches="tight")
     plt.close(fig)
-    print(f"[robustness_viz] Saved Figure 2 → {FIG2_PATH}")
+    print(f"[robustness_viz] Saved Figure 2 -> {FIG2_PATH}")
 
 
 def main() -> None:

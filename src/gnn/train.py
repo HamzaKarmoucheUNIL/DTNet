@@ -275,7 +275,7 @@ def run_training(
     """Train DTNetGNN and IsolatedBaseline; print final comparison on val set.
 
     Trains both models with identical hyperparameters (Adam lr=0.001,
-    weight_decay=5e-4, MSE loss, early stopping patience=20, max 200 epochs).
+    weight_decay=5e-4, MSE loss, early stopping patience=30, max 200 epochs).
     After training, loads each model's best checkpoint and evaluates on the
     validation set, then prints a side-by-side MSE / MAE / R² comparison.
 

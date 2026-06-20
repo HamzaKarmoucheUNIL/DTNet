@@ -9,11 +9,12 @@ build/
 # Virtual environment
 .venv/
 
-# Data
-data/processed/
+# Generated artifacts — recreated by python run_all.py
+data/processed/*.pkl
 
-# Environment variables
-.env
+# Model checkpoints — recreated by training
+results/*.pt
+results/*.pkl
 
 # Jupyter
 .ipynb_checkpoints/
@@ -22,8 +23,9 @@ data/processed/
 .DS_Store
 Thumbs.db
 
+# Project management (not for public repo)
 CLAUDE.md
 .claude
 instructions/
-results/*.pt
-results/*.pkl
+
+# NOTE: results/*.png and results/*.json are intentionally tracked (thesis figures)

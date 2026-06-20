@@ -207,10 +207,24 @@ def _eval_scenario(
     ``edge_attr`` is set to None: raw run dicts do not store edge attributes
     (those require the NetworkX graph G).  The GNN uses structure-only attention.
     """
-    x_raw = np.array(run["initial_features"], dtype=np.float32)
+    x_raw: np.ndarray = np.array(run["initial_features"], dtype=np.float32)
     if struct_feats is not None:
-        x_raw = np.concatenate([x_raw, struct_feats], axis=1)
-    x = torch.from_numpy(scaler.transform(x_raw).astype(np.float32))
+        # Scaler was fitted on all 16 dims — concatenate before transforming.
+        x = torch.from_numpy(
+            scaler.transform(np.concatenate([x_raw, struct_feats], axis=1)).astype(np.float32)
+        )
+    else:
+        # Scaler covers only the 10 base dims; compute structural features from
+        # the run's own edge topology and append them after scaling.
+        _node_order: List[str] = run["node_order"]
+        _tmp_G: nx.DiGraph = nx.DiGraph()
+        _tmp_G.add_nodes_from(_node_order)
+        for _s, _d in run["edge_index"]:
+            _tmp_G.add_edge(_node_order[_s], _node_order[_d])
+        _sf: np.ndarray = _compute_structural_features(_tmp_G, _node_order)
+        x = torch.from_numpy(
+            np.concatenate([scaler.transform(x_raw), _sf], axis=1).astype(np.float32)
+        )
     pairs: List[List[int]] = run["edge_index"]
     ei = (torch.tensor(pairs, dtype=torch.long).T.contiguous()
           if pairs else torch.zeros((2, 0), dtype=torch.long))

@@ -1,11 +1,30 @@
-networkx==3.6.1
-mesa==3.5.1
-torch
-torch_geometric
-pandas==3.0.2
+# ─── Core data processing ────────────────────────────────────────────────────
 numpy==2.4.4
+pandas==3.0.2
 scikit-learn==1.8.0
+scipy==1.17.1
+
+# ─── Supply-chain graph ───────────────────────────────────────────────────────
+networkx==3.6.1
+
+# ─── Agent-based simulation ───────────────────────────────────────────────────
+Mesa==3.5.1
+
+# ─── Graph neural network ────────────────────────────────────────────────────
+# NOTE: torch must be installed BEFORE torch-geometric.
+# For GPU support install the matching CUDA wheel first:
+#   https://pytorch.org/get-started/locally/
+torch==2.11.0
+torch-geometric==2.7.0
+
+# ─── Visualisation ───────────────────────────────────────────────────────────
 matplotlib==3.10.8
 seaborn==0.13.2
 plotly==6.6.0
+
+# ─── Interactive dashboard ───────────────────────────────────────────────────
 streamlit==1.56.0
+
+# ─── Jupyter notebooks ───────────────────────────────────────────────────────
+ipykernel==7.2.0
+tqdm==4.67.3

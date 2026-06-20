@@ -34,7 +34,7 @@ def _box(ax, cx: float, cy: float, w: float, h: float,
     """Rounded rectangle centered at (cx, cy) with bold title and optional subtitle."""
     ax.add_patch(FancyBboxPatch(
         (cx - w / 2, cy - h / 2), w, h, boxstyle="round,pad=0.012",
-        facecolor=color, edgecolor="white", linewidth=1.8, alpha=0.92,
+        facecolor=color, edgecolor="#CCCCCC", linewidth=1.8, alpha=0.92,
     ))
     dy = 0.020 if sub else 0
     ax.text(cx, cy + dy, title, ha="center", va="center",

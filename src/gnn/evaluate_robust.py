@@ -17,7 +17,9 @@ from typing import Any, Dict, List
 
 import numpy as np
 import torch
-from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.metrics import (
+    accuracy_score, f1_score, precision_score, recall_score, roc_auc_score,
+)
 
 from src.gnn.dataset import build_dataloaders
 from src.gnn.evaluate import _collect
@@ -29,7 +31,8 @@ torch.manual_seed(42)
 random.seed(42)
 SEEDS: List[int] = [42, 123, 456, 789, 1024]
 BINARY_THRESHOLD: float = 0.3
-METRIC_NAMES: List[str] = ["mae", "rmse", "f1", "precision", "recall"]
+CLS_DECISION_THRESHOLD: float = 0.5
+METRIC_NAMES: List[str] = ["mae", "rmse", "f1", "precision", "recall", "accuracy", "auc"]
 PKL_PATH: Path = Path("data/processed/simulation_runs.pkl")
 RESULTS_PATH: Path = Path("results/robustness_results.json")
 
@@ -37,31 +40,42 @@ RESULTS_PATH: Path = Path("results/robustness_results.json")
 def _extended_metrics(
     y_pred: torch.Tensor,
     y_true: torch.Tensor,
+    y_cls: torch.Tensor,
     threshold: float = BINARY_THRESHOLD,
 ) -> Dict[str, float]:
-    """Compute MAE, RMSE, F1, Precision, and Recall for a set of predictions.
+    """Compute MAE, RMSE, F1, Precision, Recall, Accuracy, and AUC-ROC.
 
     MAE and RMSE operate on raw severity scores; F1/Precision/Recall binarise
-    predictions at ``threshold`` (disrupted = severity > threshold).
+    ``y_pred`` at ``threshold``. Accuracy and AUC use the classification head
+    logits ``y_cls`` (sigmoid → probability; binarised at CLS_DECISION_THRESHOLD).
 
     Args:
         y_pred: Predicted disruption severities, shape (N,).
         y_true: Ground-truth disruption severities, shape (N,).
+        y_cls: Raw classification logits from the classification head, shape (N,).
         threshold: Binary classification cut-off. Default 0.3.
 
     Returns:
-        Dict with keys ``mae``, ``rmse``, ``f1``, ``precision``, ``recall``.
+        Dict with keys ``mae``, ``rmse``, ``f1``, ``precision``, ``recall``,
+        ``accuracy``, ``auc``.
     """
     mae: float = torch.mean(torch.abs(y_pred - y_true)).item()
     rmse: float = math.sqrt(torch.mean((y_pred - y_true) ** 2).item())
-    y_p = (y_pred.numpy() > threshold).astype(int)
-    y_t = (y_true.numpy() > threshold).astype(int)
+    y_p: np.ndarray = (y_pred.numpy() > threshold).astype(int)
+    y_t: np.ndarray = (y_true.numpy() > threshold).astype(int)
+    y_prob: np.ndarray = torch.sigmoid(y_cls).numpy()
+    y_hat: np.ndarray = (y_prob >= CLS_DECISION_THRESHOLD).astype(int)
+    auc: float = (
+        float(roc_auc_score(y_t, y_prob)) if len(np.unique(y_t)) > 1 else 0.0
+    )
     return {
         "mae": mae,
         "rmse": rmse,
         "f1": float(f1_score(y_t, y_p, zero_division=0)),
         "precision": float(precision_score(y_t, y_p, zero_division=0)),
         "recall": float(recall_score(y_t, y_p, zero_division=0)),
+        "accuracy": float(accuracy_score(y_t, y_hat)),
+        "auc": auc,
     }
 
 
@@ -104,12 +118,12 @@ def run_one_seed(
     baseline.load_state_dict(torch.load(base_ckpt, map_location=device))
 
     # Same test_loader for both — COMMON_MISTAKES #14
-    gnn_pred, y_true, _ = _collect(gnn, test_loader, device)
-    base_pred, _, _ = _collect(baseline, test_loader, device)
+    gnn_pred, gnn_cls, y_true, _ = _collect(gnn, test_loader, device)
+    base_pred, base_cls, _, _ = _collect(baseline, test_loader, device)
 
     return {
-        "networked": _extended_metrics(gnn_pred, y_true),
-        "isolated": _extended_metrics(base_pred, y_true),
+        "networked": _extended_metrics(gnn_pred, y_true, gnn_cls),
+        "isolated":  _extended_metrics(base_pred, y_true, base_cls),
     }
 
 
