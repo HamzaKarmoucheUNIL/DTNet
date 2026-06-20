@@ -10,11 +10,19 @@ build/
 .venv/
 
 # Generated artifacts — recreated by python run_all.py
-data/processed/*.pkl
+data/processed/
+**/data/processed/
+notebooks/data/
 
-# Model checkpoints — recreated by training
-results/*.pt
-results/*.pkl
+# Model checkpoints and binary artifacts
+*.pt
+*.pkl
+
+# Thesis appendix outputs (one-off scripts)
+scripts/out/
+*.tex
+*.bib
+*.pdf
 
 # Jupyter
 .ipynb_checkpoints/
