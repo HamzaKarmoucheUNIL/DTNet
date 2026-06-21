@@ -17,15 +17,13 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 
+from src.viz.colors import LAYER_COLORS, LAYER_ORDER
+
 np.random.seed(42)
 
 BG: str = "white"
 SAVE_PATH: Path = Path("results/fig_full_graph.png")
-LAYER_ORDER: List[str] = ["supplier", "logistics", "plant", "machine", "distribution"]
-C: Dict[str, str] = {
-    "supplier": "#4A9EFF", "logistics": "#9B59B6", "plant": "#2ECC71",
-    "machine": "#F39C12", "distribution": "#E74C3C",
-}
+C: Dict[str, str] = LAYER_COLORS  # single source of truth (src/viz/colors.py)
 EDGE_STYLES: Dict[str, dict] = {
     "material_flow":          {"color": "#5599EE", "ls": "solid",   "lw": 1.4, "alpha": 0.70},
     "operational":            {"color": "#EE9955", "ls": "dashed",  "lw": 0.9, "alpha": 0.55},

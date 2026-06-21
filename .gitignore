@@ -36,4 +36,20 @@ CLAUDE.md
 .claude
 instructions/
 
-# NOTE: results/*.png and results/*.json are intentionally tracked (thesis figures)
+# One-off dev files
+_build_nb05.py
+data/raw/synthetic_industrial_machine_data.csv
+scripts/
+tests/
+
+# Stale dated intermediate figures
+results/dtnet_attention_graph_*.png
+results/dtnet_scenario_analysis_*.png
+results/dtnet_training_curves_*.png
+results/thesis_figures/
+
+# NOTE: results/fig_*.png, results/sim_*.png, results/dtnet_graph.png, and results/*.json are intentionally tracked (thesis figures)
+DTNet-test/
+results/*.png
+results/thesis_figures/
+results/*.pt

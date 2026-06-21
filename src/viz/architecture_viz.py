@@ -11,14 +11,13 @@ import matplotlib.patches as mpatches
 from matplotlib.patches import FancyBboxPatch
 from pathlib import Path
 
+from src.viz.colors import LAYER_COLORS
+
 np.random.seed(42)
 
 BG: str = "white"
 SAVE_PATH: Path = Path("results/fig_architecture.png")
-C: dict = {
-    "supplier": "#4A9EFF", "logistics": "#9B59B6", "plant": "#2ECC71",
-    "machine": "#F39C12", "distribution": "#E74C3C",
-}
+C: dict = LAYER_COLORS  # single source of truth (src/viz/colors.py)
 
 
 def _band(ax, y0: float, y1: float, color: str) -> None:

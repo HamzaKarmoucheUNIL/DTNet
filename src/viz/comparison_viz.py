@@ -22,15 +22,12 @@ import numpy as np
 import torch
 
 from src.gnn.evaluate import LAYER_ORDER, ONE_HOT_START
+from src.viz.colors import LAYER_COLORS
 
 np.random.seed(42)
 torch.manual_seed(42)
 
 BG = 'white'
-LAYER_COLORS = {
-    'supplier': '#4c7aff', 'logistics': '#9b59b6', 'plant': '#2ecc71',
-    'machine': '#f39c12',  'distribution': '#e74c3c',
-}
 CASCADE_CMAP = mcolors.LinearSegmentedColormap.from_list(
     'cascade', ['#D6EAF8', '#F39C12', '#E74C3C']
 )

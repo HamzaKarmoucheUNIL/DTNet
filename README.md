@@ -24,19 +24,19 @@ Numbers from `results/results_summary.json` (held-out test set) and `results/rob
 
 DTNetGNN outperforms the isolated baseline on all metrics across all 5 seeds (RQ3: yes). In the critical-hub scenario (disrupting the highest-betweenness node), 71 of 82 nodes were disrupted within 1 step. In the all-suppliers scenario, network health fell to approximately 66%.
 
-Figures: `results/fig_robustness_comparison.png`, `results/fig_seeds_stability.png`, `results/fig_scenario_comparison.png`, `results/fig_full_graph.png`, `results/fig_loss_curves.png`.
+Figures are not versioned; they are generated into `results/` by running `python run_all.py`.
 
 ---
 
 ## Architecture
 
-![DTNet Architecture](results/fig_architecture.png)
+<!-- TODO: ajouter la figure d'architecture à jour -->
 
 The graph has 82 nodes and 219 edges across 5 node types (supplier, logistics, plant, machine, distribution) and 4 edge types. Each node is a Mesa agent with type-specific attributes and a health score. Edges carry `criticality_weight`, `flow_capacity`, and `latency_days`.
 
 The GNN (`DTNetGNN`) is a two-layer Graph Attention Network with two output heads: a regression head for disruption severity and a binary classification head for disrupted/not. Node features are 16-dimensional: 10 twin features concatenated with 6 structural features (degree, betweenness, in/out-degree norm, closeness, pagerank). Training configuration: `hidden=128`, `heads=(4,1)`, `edge_dim=3`, 78,466 trainable parameters. The isolated baseline (`IsolatedBaseline`) is a single-layer MLP with 2,434 parameters.
 
-![Graph topology](results/fig_full_graph.png)
+<!-- TODO: ajouter la figure de topologie à jour -->
 
 ---
 
